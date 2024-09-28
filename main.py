@@ -1,67 +1,113 @@
-from state import State, STATE_SETUP, STATE_ADVERTISE, STATE_DATA
+# We always start in advertising mode
 
-class Activity:
+# Commands valid during connection
+CMD_MODE_SETUP = 0
+CMD_MODE_DATA = 1
 
-    def __init__(self) -> None:
+# Commands valid in both modes
+CMD_DISCONNECT = 2
+
+# Commands valid only in setup mode
+CMD_SET_NAME = 3
+CMD_SET_FREQ = 4
+
+# Commands valid only in data mode
+
+class BLE:
+
+    def __init__(self):
         pass
-    
-    def onFirstEnter():
-        # the first time it enters this state
+
+    def start(self):
         pass
 
-    def onBleDisconnected():
-        # the BLE is disconnected
+    def isAdvertising(self):
         pass
 
+    def startAdvertising(self):
+        pass
+
+    def disconnect(self):
+        pass
+
+    def isConnected(self):
+        pass
+
+    def hasPendingCommand(self):
+        pass
+
+
+class Mode:
+    # we can use this as an abstraction to reuse some of the common functions
+
+    def __init__(self, ble: BLE):
+        self._ble = ble
+
+    def _awaitCommand(self):
+        # TODO: maybe we can use coroutine for this?
+        pass
+
+
+class SetupMode(Mode):
     
-
-def setup(state: State):
-    pass
-
-def advertise(state: State):
-    pass
-
-def transmit_data(state: State):
-    pass
-
-# The default mode is always advertising mode
-state = State()
-
-# Main Loop 
-# Looper, should show warning or throw error if blocked
-# Benefits of using a main looper:
-# 1. control the frequency of the MCU in one place
-# 2. centralize the control of BLE connection and events
-# Cons:
-# 1. you'll have to pass the BLE object around
-# Notes:
-# - I'm basically treating the BLE as my UI, and the sensors as my database
+    def start(self):
+        while True:
+            # Ensure the connection is active
+            if self._ble.isConnected() == False:
+                return
+            
+            try:
+                command = self._awaitCommand()
+                if command == CMD_DISCONNECT:
+                    self._ble.disconnect()
+                elif command == CMD_SET_NAME:
+                    pass
+                elif command == CMD_SET_FREQ:
+                    pass
+                else:
+                    # invalid command, ignore
+                    print("invalid command")
+            except IOError:
+                # disconnected unexpectedly
+                return
 
 
-# - The complexity arises when we add the setup mode into the mix
-# - Without the setup mode, it is a simple two mode 
-#    1. "AD" --[connect]--> "DATA"
-#    2. "DATA" --[disconnect]--> "AD"
-# - With the setup mode, it is more complicated
-#    1. "AD" --[connect-data]--> "DATA"
-#            --[connect-setup]--> "SETUP"
-#    2. "DATA" --[disconnect]--> "AD" 
-#    3. "SETUP" --[disconnect]--> "AD"
+class DataMode(Mode):
 
-while True:
+    def start(self):
+        while True:
+            # Ensure the connection is active
+            if self._ble.isConnected() == False:
+                return
+            
+            # Here, we follow the BLE standard to stage the data for each characteristics
+            pass
 
-    if state.current == STATE_SETUP:
-        # run setup
-        setup(state)
-    
-    elif state.current == STATE_ADVERTISE:
-        # run advertising
-        advertise(state)
 
-    elif state.current == STATE_DATA:
-        # run data transmission
-        transmit_data(state)
+class AdvertisingMode(Mode):
 
-    else:
-        except RuntimeError
+    def start(self):
+        while True:
+            # Ensure advertisement is active
+            if self._ble.isAdvertising() == False:
+                self._ble.startAdvertising()
+                continue
+            
+            # Wait for command
+            command = self._awaitCommand()
+            if command == CMD_MODE_SETUP:
+                # enter setup mode
+                setup_mode = SetupMode(self._ble)
+                setup_mode.start()
+            elif command == CMD_MODE_DATA:
+                # enter data mode
+                data_mode = DataMode(self._ble)
+                data_mode.start()
+            else:
+                # invalid command, drop connection
+                # (NOTE: alternatively, we can drop the connection in the _awaitCommand method. However, it would become a side effect.)
+                self._ble.disconnect()
 
+
+advertising_mode = AdvertisingMode(ble=BLE())
+advertising_mode.start()

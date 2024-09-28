@@ -1,69 +1,67 @@
-import sys
+from state import State, STATE_SETUP, STATE_ADVERTISE, STATE_DATA
 
-# ruff: noqa: E402
-sys.path.append("")
+class Activity:
 
-from micropython import const
+    def __init__(self) -> None:
+        pass
+    
+    def onFirstEnter():
+        # the first time it enters this state
+        pass
 
-import asyncio
-import aioble
-import bluetooth
+    def onBleDisconnected():
+        # the BLE is disconnected
+        pass
 
-import random
-import struct
+    
 
-# org.bluetooth.service.environmental_sensing
-_ENV_SENSE_UUID = bluetooth.UUID(0x181A)
-# org.bluetooth.characteristic.temperature
-_ENV_SENSE_TEMP_UUID = bluetooth.UUID(0x2A6E)
-# org.bluetooth.characteristic.gap.appearance.xml
-_ADV_APPEARANCE_GENERIC_THERMOMETER = const(768)
+def setup(state: State):
+    pass
 
-# How frequently to send advertising beacons.
-_ADV_INTERVAL_MS = 250_000
+def advertise(state: State):
+    pass
 
+def transmit_data(state: State):
+    pass
 
-# Register GATT server.
-temp_service = aioble.Service(_ENV_SENSE_UUID)
-temp_characteristic = aioble.Characteristic(
-    temp_service, _ENV_SENSE_TEMP_UUID, read=True, notify=True
-)
-aioble.register_services(temp_service)
+# The default mode is always advertising mode
+state = State()
 
-
-# Helper to encode the temperature characteristic encoding (sint16, hundredths of a degree).
-def _encode_temperature(temp_deg_c):
-    return struct.pack("<h", int(temp_deg_c * 100))
-
-
-# This would be periodically polling a hardware sensor.
-async def sensor_task():
-    t = 24.5
-    while True:
-        temp_characteristic.write(_encode_temperature(t), send_update=True)
-        t = 24.5 + random.uniform(-0.5, 0.5)
-        await asyncio.sleep_ms(1)
+# Main Loop 
+# Looper, should show warning or throw error if blocked
+# Benefits of using a main looper:
+# 1. control the frequency of the MCU in one place
+# 2. centralize the control of BLE connection and events
+# Cons:
+# 1. you'll have to pass the BLE object around
+# Notes:
+# - I'm basically treating the BLE as my UI, and the sensors as my database
 
 
-# Serially wait for connections. Don't advertise while a central is
-# connected.
-async def peripheral_task():
-    while True:
-        async with await aioble.advertise(
-            _ADV_INTERVAL_MS,
-            name="mpy-temp",
-            services=[_ENV_SENSE_UUID],
-            appearance=_ADV_APPEARANCE_GENERIC_THERMOMETER,
-        ) as connection:
-            print("Connection from", connection.device)
-            await connection.disconnected(timeout_ms=None)
+# - The complexity arises when we add the setup mode into the mix
+# - Without the setup mode, it is a simple two mode 
+#    1. "AD" --[connect]--> "DATA"
+#    2. "DATA" --[disconnect]--> "AD"
+# - With the setup mode, it is more complicated
+#    1. "AD" --[connect-data]--> "DATA"
+#            --[connect-setup]--> "SETUP"
+#    2. "DATA" --[disconnect]--> "AD" 
+#    3. "SETUP" --[disconnect]--> "AD"
 
+while True:
 
-# Run both tasks.
-async def main():
-    t1 = asyncio.create_task(sensor_task())
-    t2 = asyncio.create_task(peripheral_task())
-    await asyncio.gather(t1, t2)
+    if state.current == STATE_SETUP:
+        # run setup
+        setup(state)
+    
+    elif state.current == STATE_ADVERTISE:
+        # run advertising
+        advertise(state)
 
+    elif state.current == STATE_DATA:
+        # run data transmission
+        transmit_data(state)
 
-asyncio.run(main())
+    else:
+        except RuntimeError
+

@@ -40,6 +40,11 @@ class BLE:
 class Mode:
     # we can use this as an abstraction to reuse some of the common functions
 
+    # Description: each Mode has full control of the BLE functionality, and is responsible
+    #   for ensuring that BLE is running as expected.
+    #   As we develop, we can abstract the control of the BLE process and segment the "start"
+    #   function into smaller ones that fit into the lifecycle of BLE connections.
+
     def __init__(self, ble: BLE):
         self._ble = ble
 

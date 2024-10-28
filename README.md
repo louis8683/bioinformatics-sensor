@@ -35,3 +35,6 @@ This repository contains the code for the sensor of the bioinformatics project f
     * Temperature Characteristic (UUID: 0x2A6E)
     * Humidity Characteristic (UUID: 0x2A6F)
 * The CO and PM2.5 will need to be custom characteristics. We can assign our own values.
+
+### 10/28/2024: Overhaul
+* Completely overhaul the project to align with the State Machine pattern.

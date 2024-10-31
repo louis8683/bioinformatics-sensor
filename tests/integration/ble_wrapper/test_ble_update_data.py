@@ -43,7 +43,9 @@ async def compare_updated_values(ble_wrapper, data_container):
             except asyncio.TimeoutError:
                 continue
     except asyncio.CancelledError:
-        return
+        print("compare_updated_values task cancelled")
+    except Exception as e:
+        print(f"Unknown error of type {type(e).__name__}: {e}. (compare_updated_values)")
     
 
 

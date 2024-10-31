@@ -5,16 +5,28 @@ import random
 import struct
 from micropython import const
 import time
+import logging
 
 from .ble_event_handler import BLEEventHandler
 from .constants import ENV_SENSE_UUID, BIO_INFO_CHARACTERISTICS_UUID, REQUEST_CHARACTERISTICS_UUID, RESPONSE_CHARACTERISTICS_UUID, MACHINE_TIME_CHARACTERISTICS_UUID
 from .constants import HANDSHAKE_MSG, HANDSHAKE_TIMEOUT_MS
 from .constants import ADV_APPEARANCE_GENERIC_THERMOMETER, ADV_INTERVAL_MS
 
+from .utilities import get_logger
+from . import utilities
+
 
 class BLEWrapper:
     """
-    BLE wrapper for event-based interfaces.
+    BLEWrapper is an event-based wrapper for handling Bluetooth Low Energy (BLE) communications. It simplifies the setup and management of BLE services, characteristics, and connection state, as well as the data handling for a bioinformatics device.
+
+    This class is designed to work with BLEEventHandler to handle asynchronous BLE events, 
+    such as connection, disconnection, and data updates. It includes a GATT server setup 
+    with services and characteristics necessary for bioinformatics sensor data communication.
+
+    Attributes:
+        _name (str): The name of the BLE device.
+        _data (dict): Sensor data including temperature, humidity, PM2.5, CO concentration, and timestamp of last update.
     """
     
     def __init__(self, name="bioinfo", event_handler=None):
@@ -24,13 +36,13 @@ class BLEWrapper:
         :param name: The BLE device name to be set on initialization.
         """
 
-        print("BLEWrapper initializing...")
+        get_logger().info("BLEWrapper initializing...")
 
-        self.name = name
-        self.connection = None # Type of "aioble.DeviceConnection"
-        self.service_uuids = [ENV_SENSE_UUID]
-        self.event_handler = event_handler
-        self.data = {
+        self._name = name
+        self._connection = None # Type of "aioble.DeviceConnection"
+        self._service_uuids = [ENV_SENSE_UUID]
+        self._event_handler = event_handler
+        self._data = {
             "temperature": float("-inf"), # float
             "humidity": float("-inf"), # float
             "pm2_5": float("-inf"), # float
@@ -39,24 +51,35 @@ class BLEWrapper:
         }
 
         # Events
-        self.destroy_signal = asyncio.Event()
-        self.handshake_event = asyncio.Event()
+        self._destroy_signal = asyncio.Event()
+        self._handshake_event = asyncio.Event()
 
         # Tasks
-        self.peripheral_task = None
-        self.machine_time_task = None
+        self._peripheral_task = None
+        self._machine_time_task = None
 
         # Initialize BLE
         self._register_gatt_server()
 
+        get_logger().info("Init done.")
 
-        
 
-        print("Init done.")
+    # *** PRIVATE GATT/BLE METHODS ***
 
     
-    def _register_gatt_server(self): # TODO: modify to fit our purposes
-        # Register GATT server.
+    def _register_gatt_server(self):
+        """
+        Register GATT server.
+        
+        One service
+        - Environment sensing service
+
+        Four characteristics
+        - Bioinfo
+        - Machine time
+        - Request
+        - Response
+        """
         self.bioinfo_service = aioble.Service(ENV_SENSE_UUID)
         self.bioinfo_characteristic = aioble.Characteristic(
             service=self.bioinfo_service,
@@ -88,8 +111,6 @@ class BLEWrapper:
             indicate=True,
         )
 
-        
-
         aioble.register_services(self.bioinfo_service)
 
     
@@ -100,101 +121,87 @@ class BLEWrapper:
         Returns
             bool: True if success, False if failed.
         """
-        print("Handshake in progress...")
+        get_logger().info("Handshake in progress...")
         valid_handshake = False
         try:
             await self.request_characteristic.written(timeout_ms=HANDSHAKE_TIMEOUT_MS)
             data = self.request_characteristic.read()
             if len(data) > 0 and data.decode("utf-8") == HANDSHAKE_MSG:
                 response_msg = "howdy".encode("utf-8")
-                print("Responding to the handshake...")
+                get_logger().info("Responding to the handshake...")
                 await self.response_characteristic.indicate(
                     connection, 
                     data=response_msg, 
                     timeout_ms=HANDSHAKE_TIMEOUT_MS
                 )
-                print("Handshake successful.")
+                get_logger().info("Handshake successful.")
                 valid_handshake = True
             elif len(data) > 0:
                 message = data.decode("utf-8")
-                print(f"Bad handshake message: {message}. Closing connection...")
+                get_logger().warning(f"Bad handshake message: {message}. Closing connection...")
             else:
-                print("Empty handshake, closing connection...")
-        # except UnicodeDecodeError: # NameError: name 'UnicodeDecodeError' isn't defined
-        #     print("Unable to decode handshake message. Closing connection...")
+                get_logger().warning("Empty handshake, closing connection...")
         except asyncio.TimeoutError:
-            print("TIMEOUT on handshake. Closing connection...")
+            get_logger().warning("TIMEOUT on handshake. Closing connection...")
         except aioble.DeviceDisconnectedError:
-            print("Device has disconnected prematurely. Closing connection...")
+            get_logger().warning("Device has disconnected prematurely. Closing connection...")
         except Exception as e:
-            print(f"Unknown error of type {type(e).__name__}: {e}. Closing connection...")
+            get_logger().warning(f"Unknown error of type {type(e).__name__}: {e}. Closing connection...")
         
         return valid_handshake
 
 
-    # Serially wait for connections. Don't advertise while a central is
-    # connected.
     async def _advertise_and_connect(self):
         """
-        This private function handles the forever loop between advertisement and connection states.
+        Handles the forever loop between advertisement and connection states.
         """
-        print("Starting advertisment/connection loop...")
+        get_logger().info("Starting advertisment/connection loop...")
         try:
             while True:
                 async with await aioble.advertise(
                     ADV_INTERVAL_MS,
-                    name=self.name,
-                    services=self.service_uuids,
+                    name=self._name,
+                    services=self._service_uuids,
                     appearance=ADV_APPEARANCE_GENERIC_THERMOMETER,
                 ) as connection:
                     # Initialize the connection
-                    self.connection = connection
+                    self._connection = connection
 
-                    print("Connection from", connection.device)
+                    get_logger().info(f"Connection from {connection.device}")
 
-                    if self.event_handler is not None:
-                        self.event_handler.on_connect()
+                    if self._event_handler is not None:
+                        self._event_handler.on_connect()
 
                     # Handshake
                     valid_handshake = await self._handshake(connection)
 
                     # Either wait for disconnection or disconnect directly according to the handshake result.
                     if valid_handshake:
-                        if self.event_handler is not None:
-                            self.event_handler.on_handshake_success()
+                        if self._event_handler is not None:
+                            self._event_handler.on_handshake_success()
                         await connection.disconnected()
                     else:
                         await connection.disconnected(disconnect=True)
 
-                    print("Disconnected")
+                    get_logger().info("Disconnected")
 
-                    if self.event_handler is not None:
-                        self.event_handler.on_disconnect()
-
+                    if self._event_handler is not None:
+                        self._event_handler.on_disconnect()
 
                     # clean up after disconnection
-                    self.connection = None
+                    self._connection = None
 
                     # break from the loop if we want to destroy the BLEWrapper
-                    if self.destroy_signal.is_set():
+                    if self._destroy_signal.is_set():
                         break
         except AttributeError as e:
             # the aioble.advertise returns a None
-            print(f"advertise/connection loop failed: {e}")
+            get_logger().warning(f"advertise/connection loop failed: {e}")
         except asyncio.CancelledError:
             # task is cancelled through "task.cancel()", which is a backup plan for setting the destroy signal
-            print("Peripheral task forced cancelled.")
-
-
-    def _encode_int(self, val):
-        return struct.pack("<i", val)
-    
-    
-    def _encode_float(self, val):
-        return struct.pack("<f", val)
+            get_logger().warning("Peripheral task forced cancelled.")
     
 
-    # update the time characteristics every one second
     async def _update_machine_time_characteristics(self):
         """
         Update the machine-time-characteristics every 1 second
@@ -204,19 +211,20 @@ class BLEWrapper:
         try:
             while True:
                 current_time = time.ticks_ms()
-                time_data = self._encode_int(current_time // 1000)
+                time_data = utilities.encode_int(current_time // 1000)
                 self.machine_time_characteristics.write(time_data)
 
                 # sleep for a second
                 await asyncio.sleep(1)
 
                 # check for destroy signal
-                if self.destroy_signal.is_set():
+                if self._destroy_signal.is_set():
                     break
         except asyncio.CancelledError:
             pass
 
-    # Event Handler registration methods
+
+    # *** EVENT HANDLER REGISTRATION METHODS ***
 
 
     def set_event_handler(self, event_handler: BLEEventHandler):
@@ -225,18 +233,18 @@ class BLEWrapper:
         
         :param event_handler: An instance implementing the BLEEventHandler interface.
         """
-        self.event_handler = event_handler
+        self._event_handler = event_handler
 
 
     def unregister_event_handler(self):
         """
         Unregister the current event handler.
         """
-        self.event_handler = None
-        print("Event handler unregistered.")
+        self._event_handler = None
+        get_logger().info("Event handler unregistered.")
 
 
-    # Other public BLE methods
+    # *** PUBLIC LIFECYCLE METHODS ***
 
 
     async def start(self):
@@ -245,15 +253,14 @@ class BLEWrapper:
         
         The advertisement/connection task is started in a coroutine with asyncio.
         """
-        print("BLE started and advertising...")
+        get_logger().info("BLE started and advertising...")
         
         # create the task if not created yet
-        if self.peripheral_task is None:
-            self.peripheral_task = asyncio.create_task(self._advertise_and_connect())
+        if self._peripheral_task is None:
+            self._peripheral_task = asyncio.create_task(self._advertise_and_connect())
 
-        if self.machine_time_task is None:
-            self.machine_time_task = asyncio.create_task(self._update_machine_time_characteristics())
-
+        if self._machine_time_task is None:
+            self._machine_time_task = asyncio.create_task(self._update_machine_time_characteristics())
 
 
     def stop(self):
@@ -263,9 +270,9 @@ class BLEWrapper:
 
     def disconnect(self):
         """Disconnect the BLE device."""
-        print("BLE disconnected.")
-        if self.event_handler:
-            self.event_handler.on_disconnect()
+        get_logger().info("BLE disconnected.")
+        if self._event_handler:
+            self._event_handler.on_disconnect()
 
 
     def update_bioinfo_data(
@@ -292,45 +299,64 @@ class BLEWrapper:
 
         # clear self.data if not keep old
         if not keep_old:
-            for key in self.data:
-                self.data[key] = float("-inf")
+            for key in self._data:
+                self._data[key] = float("-inf")
             
         # update the data
         if temperature:
-            self.data["temperature"] = temperature
+            self._data["temperature"] = temperature
         if humidity:
-            self.data["humidity"] = temperature
+            self._data["humidity"] = temperature
         if pm2_5:
-            self.data["pm2_5"] = pm2_5
+            self._data["pm2_5"] = pm2_5
         if co_concentration:
-            self.data["co_concentration"] = co_concentration
+            self._data["co_concentration"] = co_concentration
 
-        self.data["last_update"] = time.ticks_ms() // 1000
+        self._data["last_update"] = time.ticks_ms() // 1000
 
         # write to the GATTS characteristics
         packed_data = struct.pack(
             '<ffffi',
-            self.data["temperature"],
-            self.data["humidity"],
-            self.data["pm2_5"],
-            self.data["co_concentration"],
-            self.data["last_update"]
+            self._data["temperature"],
+            self._data["humidity"],
+            self._data["pm2_5"],
+            self._data["co_concentration"],
+            self._data["last_update"]
         )
         self.bioinfo_characteristic.write(packed_data)
 
-        if self.event_handler is not None:
-            self.event_handler.on_bioinfo_data_updated()
+        if self._event_handler is not None:
+            self._event_handler.on_bioinfo_data_updated()
 
     
     def get_bioinfo_data(self):
-        return self.data
+        """
+        Getter for bioinfo data.
+
+        Fields:
+            - temperature (float): The latest recorded temperature in degrees Celsius.
+            - humidity (float): The relative humidity as a value between 0.0 and 1.0.
+            - pm2_5 (float): PM2.5 concentration in micrograms per cubic meter (µg/m³).
+            - co_concentration (float): Carbon monoxide (CO) concentration in parts per million (PPM).
+            - last_update (int): The timestamp of the last data update in seconds.
+
+        Returns:
+            dict: A dictionary containing the latest bioinformatics data advertised.
+        """
+        return self._data
 
     
     def is_connected(self):
-        if self.connection is None:
+        """
+        Whether a client is connected.
+
+        Returns
+            bool: True if there is a client connected, False otherwise.
+        """
+        if self._connection is None:
             return False
         else:
-            return self.connection.is_connected()
+            return self._connection.is_connected()
         
     
     async def destroy(self):
@@ -339,33 +365,31 @@ class BLEWrapper:
         """
 
         # Send a destroy signal
-        print("Sending destroy signal...")
-        self.destroy_signal.set()
+        get_logger().info("Sending destroy signal...")
+        self._destroy_signal.set()
 
         # Wait for tasks to finish
         try:
-            if isinstance(self.peripheral_task, asyncio.Task):
-                await asyncio.wait_for(self.peripheral_task, timeout=10)
+            if isinstance(self._peripheral_task, asyncio.Task):
+                await asyncio.wait_for(self._peripheral_task, timeout=10)
 
-            if isinstance(self.machine_time_task, asyncio.Task):
-                await asyncio.wait_for(self.machine_time_task, timeout=10)
+            if isinstance(self._machine_time_task, asyncio.Task):
+                await asyncio.wait_for(self._machine_time_task, timeout=10)
 
         except asyncio.TimeoutError:
-            print("Destroy signal timed out, sending task cancel signal...")
-            if isinstance(self.peripheral_task, asyncio.Task):
-                self.peripheral_task.cancel()
+            get_logger().warning("Destroy signal timed out, sending task cancel signal...")
+            if isinstance(self._peripheral_task, asyncio.Task):
+                self._peripheral_task.cancel()
             
-            if isinstance(self.machine_time_task, asyncio.Task):
-                self.machine_time_task.cancel()
+            if isinstance(self._machine_time_task, asyncio.Task):
+                self._machine_time_task.cancel()
             
-            if isinstance(self.peripheral_task, asyncio.Task):
-                await asyncio.wait_for(self.peripheral_task, timeout=10)
+            if isinstance(self._peripheral_task, asyncio.Task):
+                await asyncio.wait_for(self._peripheral_task, timeout=10)
             
-            if isinstance(self.machine_time_task, asyncio.Task):
-                await asyncio.wait_for(self.machine_time_task, timeout=10)
+            if isinstance(self._machine_time_task, asyncio.Task):
+                await asyncio.wait_for(self._machine_time_task, timeout=10)
         
-        print("All tasks finished")
+        get_logger().info("All tasks finished")
         
-            
-
     

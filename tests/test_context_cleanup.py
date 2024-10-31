@@ -19,7 +19,7 @@ async def test_context_cleanup():
     asyncio.run(context.cleanup())
 
     assert ble_wrapper.connected == False
-    assert ble_wrapper.event_handler is not None
+    assert ble_wrapper._event_handler is not None
 
 
 async def main():

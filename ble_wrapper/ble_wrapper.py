@@ -7,30 +7,9 @@ from micropython import const
 import time
 
 from .ble_event_handler import BLEEventHandler
-
-
-# org.bluetooth.service.environmental_sensing
-_ENV_SENSE_UUID = bluetooth.UUID(0x181A)
-# org.bluetooth.characteristic.temperature
-_ENV_SENSE_TEMP_UUID = bluetooth.UUID(0x2A6E)
-# org.bluetooth.characteristic.gap.appearance.xml
-_ADV_APPEARANCE_GENERIC_THERMOMETER = const(768)
-
-# bioinfo-characteristics UUID
-_BIO_INFO_CHARACTERISTICS_UUID = bluetooth.UUID("9fda7cce-48d4-4b1a-9026-6d46eec4e63a")
-# request-characteristics UUID
-_REQUEST_CHARACTERISTICS_UUID = bluetooth.UUID("4f2d7b8e-23b9-4bc7-905f-a8e3d7841f6a")
-# response-characteristics UUID
-_RESPONSE_CHARACTERISTICS_UUID = bluetooth.UUID("93e89c7d-65e3-41e6-b59f-1f3a6478de45")
-# machine-time-characteristics UUID
-_MACHINE_TIME_CHARACTERISTICS_UUID = bluetooth.UUID("4fd3a9d8-5e82-4c1e-a2d3-9bc23f3a8341")
-
-# expected handshake message from client
-HANDSHAKE_MSG = "hello"
-HANDSHAKE_TIMEOUT_MS = 1000
-
-# How frequently to send advertising beacons.
-_ADV_INTERVAL_MS = 250_000
+from .constants import ENV_SENSE_UUID, BIO_INFO_CHARACTERISTICS_UUID, REQUEST_CHARACTERISTICS_UUID, RESPONSE_CHARACTERISTICS_UUID, MACHINE_TIME_CHARACTERISTICS_UUID
+from .constants import HANDSHAKE_MSG, HANDSHAKE_TIMEOUT_MS
+from .constants import ADV_APPEARANCE_GENERIC_THERMOMETER, ADV_INTERVAL_MS
 
 
 class BLEWrapper:
@@ -49,7 +28,7 @@ class BLEWrapper:
 
         self.name = name
         self.connection = None # Type of "aioble.DeviceConnection"
-        self.service_uuids = [_ENV_SENSE_UUID]
+        self.service_uuids = [ENV_SENSE_UUID]
         self.event_handler = event_handler
         self.data = {
             "temperature": float("-inf"), # float
@@ -78,10 +57,10 @@ class BLEWrapper:
     
     def _register_gatt_server(self): # TODO: modify to fit our purposes
         # Register GATT server.
-        self.bioinfo_service = aioble.Service(_ENV_SENSE_UUID)
+        self.bioinfo_service = aioble.Service(ENV_SENSE_UUID)
         self.bioinfo_characteristic = aioble.Characteristic(
             service=self.bioinfo_service,
-            uuid=_BIO_INFO_CHARACTERISTICS_UUID,
+            uuid=BIO_INFO_CHARACTERISTICS_UUID,
             read=True,
             write=False,
             write_no_response=False,
@@ -93,19 +72,19 @@ class BLEWrapper:
 
         self.machine_time_characteristics = aioble.Characteristic(
             service=self.bioinfo_service,
-            uuid=_MACHINE_TIME_CHARACTERISTICS_UUID,
+            uuid=MACHINE_TIME_CHARACTERISTICS_UUID,
             read=True,
         )
         
         self.request_characteristic = aioble.Characteristic(
             service=self.bioinfo_service,
-            uuid=_REQUEST_CHARACTERISTICS_UUID,
+            uuid=REQUEST_CHARACTERISTICS_UUID,
             write=True
         )
 
         self.response_characteristic = aioble.Characteristic(
             service=self.bioinfo_service,
-            uuid=_RESPONSE_CHARACTERISTICS_UUID,
+            uuid=RESPONSE_CHARACTERISTICS_UUID,
             indicate=True,
         )
 
@@ -163,10 +142,10 @@ class BLEWrapper:
         try:
             while True:
                 async with await aioble.advertise(
-                    _ADV_INTERVAL_MS,
+                    ADV_INTERVAL_MS,
                     name=self.name,
                     services=self.service_uuids,
-                    appearance=_ADV_APPEARANCE_GENERIC_THERMOMETER,
+                    appearance=ADV_APPEARANCE_GENERIC_THERMOMETER,
                 ) as connection:
                     # Initialize the connection
                     self.connection = connection
@@ -339,7 +318,12 @@ class BLEWrapper:
         )
         self.bioinfo_characteristic.write(packed_data)
 
+        if self.event_handler is not None:
+            self.event_handler.on_bioinfo_data_updated()
 
+    
+    def get_bioinfo_data(self):
+        return self.data
 
     
     def is_connected(self):

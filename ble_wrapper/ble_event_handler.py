@@ -12,7 +12,7 @@ class BLEEventHandler:
     def on_disconnect(self):
         pass
 
-    def on_data_send(self):
+    def on_bioinfo_data_updated(self):
         pass
 
     def on_command(self, command):

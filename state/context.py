@@ -1,3 +1,5 @@
+import asyncio
+
 from ble_wrapper import BLEEventHandler, BLEWrapper
 
 class Context(BLEEventHandler):
@@ -18,8 +20,13 @@ class Context(BLEEventHandler):
     # Lifecycle methods
 
     async def start(self):
-        pass
-    
+        # We do a clean start
+        self.ble.disconnect()
+        self.ble.stop()
+        asyncio.run(self.ble.start())
+
+        # TODO: Other sensor stuff...
+
 
     async def cleanup(self):
         self.ble.disconnect()

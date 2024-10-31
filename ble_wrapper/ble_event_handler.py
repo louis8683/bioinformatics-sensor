@@ -6,6 +6,9 @@ class BLEEventHandler:
     def on_connect(self):
         pass
 
+    def on_handshake_success(self):
+        pass
+
     def on_disconnect(self):
         pass
 

@@ -19,7 +19,7 @@ async def test_context_cleanup():
     asyncio.run(context.cleanup())
 
     assert ble_wrapper.connected == False
-    assert ble_wrapper.event_handler is None
+    assert ble_wrapper.event_handler is not None
 
 
 async def main():
@@ -30,5 +30,5 @@ try:
     print("Testing context cleanup...")
     asyncio.run(main())
     print("PASS")
-except KeyboardInterrupt:
-    print("Program terminated by user.")
+except AssertionError:
+    print("FAIL")

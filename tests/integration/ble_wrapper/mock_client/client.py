@@ -146,28 +146,41 @@ class Client:
     async def ui_loop(self, client: BleakClient):
         while client.is_connected:
             self.stop_event.clear()
-            selection = input("Choose a characteristics to monitor (1-3): ")
+            selection = input("Choose a characteristics to monitor (1-3) or (4) to send commands: ")
 
             if selection == "1":
                 print("You've chosen the 'Machine-time characteristics'")
             elif selection == "2":
                 print("You've chosen the  'Bioinfo characteristics'")
+            elif selection == "4":
+                self.response_event.clear()
+                cmd_str = input("Please enter the command string: ")
+                await client.write_gatt_char(_REQUEST_CHARACTERISTICS_UUID, cmd_str.encode("utf-8"), response=True)
+
+                try:
+                    await asyncio.wait_for(self.response_event.wait(), timeout=HANDSHAKE_TIMEOUT)
+                except asyncio.TimeoutError:
+                    print("Response timed out")
+
             else:
                 print("Invalid task selection. Please try again.")
                 continue
-
-            duration = input("How long would you like to monitor? (default is 10s)")
-            try:
-                duration = int(duration)
-                if duration < 0:
-                    duration = 10
-            except ValueError:
-                duration = 10
             
-            task = asyncio.create_task(self.monitor_time(client)) if selection == "1" else asyncio.create_task(self.monitor_bioinfo(client)) 
-            await asyncio.sleep(duration)
-            self.stop_event.set()
-            await task
+            selection = int(selection)
+            if 1 <= selection <= 3:
+
+                duration = input("How long would you like to monitor? (default is 10s)")
+                try:
+                    duration = int(duration)
+                    if duration < 0:
+                        duration = 10
+                except ValueError:
+                    duration = 10
+                
+                task = asyncio.create_task(self.monitor_time(client)) if selection == "1" else asyncio.create_task(self.monitor_bioinfo(client)) 
+                await asyncio.sleep(duration)
+                self.stop_event.set()
+                await task
 
 
     async def monitor_time(self, client: BleakClient):

@@ -1,16 +1,13 @@
-import bluetooth
 import aioble
 import asyncio
-import random
 import struct
-from micropython import const
 import time
-import logging
 
 from .ble_event_handler import BLEEventHandler
 from .constants import ENV_SENSE_UUID, BIO_INFO_CHARACTERISTICS_UUID, REQUEST_CHARACTERISTICS_UUID, RESPONSE_CHARACTERISTICS_UUID, MACHINE_TIME_CHARACTERISTICS_UUID
 from .constants import HANDSHAKE_MSG, HANDSHAKE_TIMEOUT_MS
 from .constants import ADV_APPEARANCE_GENERIC_THERMOMETER, ADV_INTERVAL_MS
+from .constants import RESPONSE_TIMEOUT_MS, BAD_RESPONSE, OK_RESPONSE
 
 from .utilities import get_logger
 from . import utilities
@@ -23,6 +20,8 @@ class BLEWrapper:
     This class is designed to work with BLEEventHandler to handle asynchronous BLE events, 
     such as connection, disconnection, and data updates. It includes a GATT server setup 
     with services and characteristics necessary for bioinformatics sensor data communication.
+
+    Processing of all commands are delegated to the event handler. This includes commands related to BLE functionality, such as the "disconnect" command.
 
     Attributes:
         _name (str): The name of the BLE device.
@@ -57,6 +56,7 @@ class BLEWrapper:
         # Tasks
         self._peripheral_task = None
         self._machine_time_task = None
+        self._request_task = None
 
         # Initialize BLE
         self._register_gatt_server()
@@ -179,6 +179,11 @@ class BLEWrapper:
                     if valid_handshake:
                         if self._event_handler is not None:
                             self._event_handler.on_handshake_success()
+
+                        # Start the request service
+                        if self._request_task is None:
+                            self._request_task = asyncio.create_task(self._request_service())
+
                         await connection.disconnected()
                     else:
                         await connection.disconnected(disconnect=True)
@@ -190,6 +195,8 @@ class BLEWrapper:
 
                     # clean up after disconnection
                     self._connection = None
+                    if self._request_task is not None:
+                        self._request_task.cancel()
 
                     # break from the loop if we want to destroy the BLEWrapper
                     if self._destroy_signal.is_set():
@@ -222,6 +229,56 @@ class BLEWrapper:
                     break
         except asyncio.CancelledError:
             pass
+    
+
+    async def _request_service(self):
+        """
+        Receive requests from clients. Loops until a destroy signal or cancel signal is sent.
+        """
+        
+        get_logger().info("Request service started...")
+
+        try:
+            while not self._destroy_signal.is_set():
+                try:
+                    await self.request_characteristic.written()
+                    data = self.request_characteristic.read()
+                    request = data.decode("utf-8")
+                    try:
+                        command = utilities.parse_command(request)
+                        
+                    except ValueError as e:
+                        get_logger().error(f"Request service: ValueError {e}")
+
+                        # write a BAD response
+                        if self.is_connected():
+                            await self.response_characteristic.indicate(
+                                self._connection, 
+                                data=BAD_RESPONSE, 
+                                timeout_ms=RESPONSE_TIMEOUT_MS
+                            )
+                        continue
+
+                    get_logger().info(f"Received command: {command}")
+
+                    # write a OK response
+                    if self.is_connected():
+                        await self.response_characteristic.indicate(
+                            self._connection, 
+                            data=OK_RESPONSE, 
+                            timeout_ms=RESPONSE_TIMEOUT_MS
+                        )
+                    
+                    # send the command as an event
+                    if self._event_handler is not None:
+                        self._event_handler.on_command(command)
+                    
+                except Exception as e:
+                    get_logger().error(f"Request Service: Unknown error of type {type(e).__name__}: {e}.")
+            get_logger().info("Request service stopped via destroy signal")
+
+        except asyncio.CancelledError:
+            get_logger().info("Request service stopped via cancel()")
 
 
     # *** EVENT HANDLER REGISTRATION METHODS ***
@@ -344,6 +401,33 @@ class BLEWrapper:
             dict: A dictionary containing the latest bioinformatics data advertised.
         """
         return self._data
+    
+
+    async def send_response(self, msg):
+        """
+        Send a response to the client.
+
+        Args:
+            msg (str): the message to send to the client.
+        
+        Returns:
+            bool: True if success, False otherwise.
+        """
+        try:
+            if self.is_connected():
+                await self.response_characteristic.indicate(
+                    self._connection, 
+                    data=msg.encode("utf-8"), 
+                    timeout_ms=RESPONSE_TIMEOUT_MS
+                )
+                get_logger().info(f"Sent response: {msg}")
+                return True
+            else:
+                get_logger().warning("Attempted to send response while no client connected")
+                return False
+        except asyncio.TimeoutError:
+            get_logger().warning("Timed out on send response")
+            return False
 
     
     def is_connected(self):
@@ -376,19 +460,33 @@ class BLEWrapper:
             if isinstance(self._machine_time_task, asyncio.Task):
                 await asyncio.wait_for(self._machine_time_task, timeout=10)
 
+            if isinstance(self._request_task, asyncio.Task):
+                await asyncio.wait_for(self._request_task, timeout=10)
+
         except asyncio.TimeoutError:
             get_logger().warning("Destroy signal timed out, sending task cancel signal...")
+            
+            # cancel the tasks
+
             if isinstance(self._peripheral_task, asyncio.Task):
                 self._peripheral_task.cancel()
             
             if isinstance(self._machine_time_task, asyncio.Task):
                 self._machine_time_task.cancel()
             
+            if isinstance(self._request_task, asyncio.Task):
+                self._request_task.cancel()
+            
+            # wait for the tasks to be cancelled
+
             if isinstance(self._peripheral_task, asyncio.Task):
                 await asyncio.wait_for(self._peripheral_task, timeout=10)
             
             if isinstance(self._machine_time_task, asyncio.Task):
                 await asyncio.wait_for(self._machine_time_task, timeout=10)
+            
+            if isinstance(self._request_task, asyncio.Task):
+                await asyncio.wait_for(self._request_task, timeout=10)
         
         get_logger().info("All tasks finished")
         

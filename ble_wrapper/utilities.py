@@ -1,6 +1,8 @@
 import logging
 import struct
 
+from .ble_commands import BLECommands
+
 LOG_LEVEL = logging.DEBUG
 LOG_FORMAT = "[%(name)s] <%(levelname)s> %(message)s"
 NAME = "BLE logger"
@@ -34,3 +36,10 @@ def encode_int(val):
 
 def encode_float(val):
     return struct.pack("<f", val)
+
+
+def parse_command(cmd_str):
+    try:
+        return BLECommands.COMMAND_MAP[cmd_str]
+    except KeyError:
+        raise ValueError(f"Unrecognizable command string: {cmd_str}")

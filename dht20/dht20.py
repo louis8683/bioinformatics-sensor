@@ -96,7 +96,7 @@ class DHT20:
 
     async def destroy(self):
         """
-        Destroy the DHT20 class and freeing up resources.
+        Destroy the DHT20 instance and freeing up resources.
         """
 
         # Send a destroy signal
@@ -123,6 +123,46 @@ class DHT20:
 
 
     # *** PRIVATE METHODS ***
+    
+    
+    async def _init_sensor(self):
+        """
+        Initialize the sensor. Only required when first starting up.
+
+        Returns:
+            bool: True if successful, False if failed.
+        """
+
+        get_logger().info("_init_sensor: initializing DHT20...")
+
+        # wait a minimum of 100ms after power on
+        await asyncio.sleep(0.1)
+
+        get_logger().info("_init_sensor: slept 100ms...")
+        
+        # verify that the status word is set to 0x18 by sending 0x71
+        try:
+            get_logger().info("Sending command to get the status word...")
+
+            # Send the command to get the status word
+            n_bytes = self._i2c.writeto(ADDRESS, STATUS_WORD_COMMAND)
+
+            if n_bytes < 1:
+                get_logger().error("Initialization: failed to send STATUS command")
+
+            # Check the status word
+            status_word = self._i2c.readfrom(ADDRESS, 1)
+
+            if status_word != b'\x18':
+                #  TODO: if not 0x18, set 0x1B, 0x1C, and 0x1E registers (manual lacks clarity for values)
+                get_logger().error(f"Initialization: status word not 0x18, instead is {status_word}. Aborting process.")
+            else:
+                get_logger().info("Initialization: success")
+                return True
+        except OSError as e:
+            get_logger().error("Initialization: OSError")
+
+        return False
     
 
     async def _trigger_measurement(self):
@@ -240,46 +280,6 @@ class DHT20:
             get_logger().info("data update service stopped via destroy signal")
         except asyncio.CancelledError:
             get_logger().info("data update service cancelled")
-
-    
-    async def _init_sensor(self):
-        """
-        Initialize the sensor. Only required when first starting up.
-
-        Returns:
-            bool: True if successful, False if failed.
-        """
-
-        get_logger().info("_init_sensor: initializing DHT20...")
-
-        # wait a minimum of 100ms after power on
-        await asyncio.sleep(0.1)
-
-        get_logger().info("_init_sensor: slept 100ms...")
-        
-        # verify that the status word is set to 0x18 by sending 0x71
-        try:
-            get_logger().info("Sending command to get the status word...")
-
-            # Send the command to get the status word
-            n_bytes = self._i2c.writeto(ADDRESS, STATUS_WORD_COMMAND)
-
-            if n_bytes < 1:
-                get_logger().error("Initialization: failed to send STATUS command")
-
-            # Check the status word
-            status_word = self._i2c.readfrom(ADDRESS, 1)
-
-            if status_word != b'\x18':
-                #  TODO: if not 0x18, set 0x1B, 0x1C, and 0x1E registers (manual lacks clarity for values)
-                get_logger().error(f"Initialization: status word not 0x18, instead is {status_word}. Aborting process.")
-            else:
-                get_logger().info("Initialization: success")
-                return True
-        except OSError as e:
-            get_logger().error("Initialization: OSError")
-
-        return False
             
 
     def _parse_data(self, data):

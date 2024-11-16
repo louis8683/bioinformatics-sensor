@@ -6,7 +6,7 @@ import struct
 from bleak import BleakScanner, BleakClient
 
 
-DEVICE_NAME = "bioinfo"
+DEVICE_NAMES = ("bioinfo", "my-device") # Max length is 15 characters
 
 # bioinfo-characteristics UUID
 _BIO_INFO_CHARACTERISTICS_UUID = "9fda7cce-48d4-4b1a-9026-6d46eec4e63a"
@@ -57,7 +57,7 @@ class Client:
 
         valid_uuids = []
         for device, adv_data in devices_and_adv_data.values():
-            if device.name == DEVICE_NAME:
+            if device.name in DEVICE_NAMES:
                 valid_uuids.append(device.address)
                 print(f"({len(valid_uuids)}) Found Device: {device.name}, Address: {device.address}")
                 print(f"Advertising Services:")
@@ -154,7 +154,7 @@ class Client:
                 print("You've chosen the  'Bioinfo characteristics'")
             elif selection == "4":
                 self.response_event.clear()
-                cmd_str = input("Please enter the command string: ")
+                cmd_str = input(f"Please enter the command string: (MTU={client.mtu_size})")
                 await client.write_gatt_char(_REQUEST_CHARACTERISTICS_UUID, cmd_str.encode("utf-8"), response=True)
 
                 try:

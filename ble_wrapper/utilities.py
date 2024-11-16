@@ -39,7 +39,15 @@ def encode_float(val):
 
 
 def parse_command(cmd_str):
+    """
+    Return the parsed command in (BLECommand, arguments).
+    """
+    tokens = cmd_str.split(" ")
     try:
-        return BLECommands.COMMAND_MAP[cmd_str]
+        if len(tokens) == 1:
+            return (BLECommands.COMMAND_MAP[tokens[0]], None) 
+        elif len(tokens) == 2:
+            return (BLECommands.COMMAND_MAP[tokens[0]], tokens[1])
+        raise ValueError
     except KeyError:
         raise ValueError(f"Unrecognizable command string: {cmd_str}")

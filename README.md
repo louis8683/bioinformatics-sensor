@@ -1,7 +1,11 @@
 # Bioinformatics Sensor Project
 
 ## Introduction
-This repository contains the code for the sensor of the bioinformatics project for high school students.
+This repository contains the code for the sensor of the bioinformatics project for high school students. This project follows the State Design Pattern, along with event-based classes. The BLEWrapper module emits BLE events, and the State module is responsible for handling the events and the transitions between states. The project is tested on a Raspberry Pi Pico WH.
+
+Here are some relevant state diagrams to illustrate the coordination between events and state transitions:
+- https://app.diagrams.net/#G17KhwCrwoC1aij7epZur9DX5p3hNNwJ2P#%7B%22pageId%22%3A%2222K4bsCwaKwlQHt7LdFq%22%7D
+- https://app.diagrams.net/#G1RkxEkHSS1XKtlL1wR5fJgb80Nw12jrZ4#%7B%22pageId%22%3A%22Whr3AbonHT35HVAB-NHT%22%7D
 
 ## Sensors
 ### PM2.5 sensor: PMS7003

@@ -186,7 +186,7 @@ class DHT20:
     
     async def _get_raw_data(self):
         """
-        Get the raw data from the sensor. Retries untill success.
+        Get the raw data from the sensor. Retries untill success. Throws OSError on unexpected disconnection.
         
         Returns
             data (bytearray): the raw data.
@@ -259,6 +259,10 @@ class DHT20:
                 get_logger().info("Reading data from sensor...")
                 try:
                     data = await asyncio.wait_for(self._get_raw_data(), DATA_TIMEOUT)
+                except OSError:
+                    # TODO: set sensor to warning
+                    get_logger().error("OSError, retry")
+                    continue
                 except asyncio.TimeoutError:
                     # TODO: set sensor to warning status
                     continue

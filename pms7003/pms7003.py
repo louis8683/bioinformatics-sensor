@@ -73,7 +73,7 @@ class PMS7003:
             - "pm1" (int): PM1.0
             - "pm2_5" (int): PM2.5
             - "pm10" (int): PM10
-        - "concentration_cf1" (dict): concentration of PM1.0, PM2.5, and PM10 in atmospheric conditions. Use these values for typical use cases. -1 if no data yet.
+        - "concentration_atm" (dict): concentration of PM1.0, PM2.5, and PM10 in atmospheric conditions. Use these values for typical use cases. -1 if no data yet.
             - "pm1" (int): PM1.0
             - "pm2_5" (int): PM2.5
             - "pm10" (int): PM10

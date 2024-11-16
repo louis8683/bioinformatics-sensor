@@ -24,7 +24,7 @@ class BLEWrapper:
     Processing of all commands are delegated to the event handler. This includes commands related to BLE functionality, such as the "disconnect" command.
 
     Attributes:
-        _name (str): The name of the BLE device.
+        name (str): The name of the BLE device.
         _data (dict): Sensor data including temperature, humidity, PM2.5, CO concentration, and timestamp of last update.
     """
     
@@ -37,7 +37,7 @@ class BLEWrapper:
 
         get_logger().info("BLEWrapper initializing...")
 
-        self._name = name
+        self.name = name
         self._connection = None # Type of "aioble.DeviceConnection"
         self._service_uuids = [ENV_SENSE_UUID]
         self._event_handler = event_handler
@@ -151,16 +151,20 @@ class BLEWrapper:
         return valid_handshake
 
 
-    async def _advertise_and_connect(self):
+    # *** COROUTINE SERVICES ***
+
+
+    async def _advertise_and_connect_service(self):
         """
         Handles the forever loop between advertisement and connection states.
         """
         get_logger().info("Starting advertisment/connection loop...")
         try:
-            while True:
+            while not self._destroy_signal.is_set():
+                print(f"Advertising as {self.name}")
                 async with await aioble.advertise(
                     ADV_INTERVAL_MS,
-                    name=self._name,
+                    name=self.name,
                     services=self._service_uuids,
                     appearance=ADV_APPEARANCE_GENERIC_THERMOMETER,
                 ) as connection:
@@ -197,10 +201,8 @@ class BLEWrapper:
                     self._connection = None
                     if self._request_task is not None:
                         self._request_task.cancel()
-
-                    # break from the loop if we want to destroy the BLEWrapper
-                    if self._destroy_signal.is_set():
-                        break
+                        self._request_task = None
+                        
         except AttributeError as e:
             # the aioble.advertise returns a None
             get_logger().warning(f"advertise/connection loop failed: {e}")
@@ -209,7 +211,7 @@ class BLEWrapper:
             get_logger().warning("Peripheral task forced cancelled.")
     
 
-    async def _update_machine_time_characteristics(self):
+    async def _update_time_service(self):
         """
         Update the machine-time-characteristics every 1 second
         """
@@ -244,8 +246,9 @@ class BLEWrapper:
                     await self.request_characteristic.written()
                     data = self.request_characteristic.read()
                     request = data.decode("utf-8")
+                    get_logger().info(f"Raw request (max length is 20 bytes): {request}")
                     try:
-                        command = utilities.parse_command(request)
+                        command, argument = utilities.parse_command(request)
                         
                     except ValueError as e:
                         get_logger().error(f"Request service: ValueError {e}")
@@ -259,7 +262,7 @@ class BLEWrapper:
                             )
                         continue
 
-                    get_logger().info(f"Received command: {command}")
+                    get_logger().info(f"Received command [{command}] with argument [{argument}]")
 
                     # write a OK response
                     if self.is_connected():
@@ -271,7 +274,7 @@ class BLEWrapper:
                     
                     # send the command as an event
                     if self._event_handler is not None:
-                        self._event_handler.on_command(command)
+                        self._event_handler.on_command(command, argument)
                     
                 except Exception as e:
                     get_logger().error(f"Request Service: Unknown error of type {type(e).__name__}: {e}.")
@@ -314,10 +317,10 @@ class BLEWrapper:
         
         # create the task if not created yet
         if self._peripheral_task is None:
-            self._peripheral_task = asyncio.create_task(self._advertise_and_connect())
+            self._peripheral_task = asyncio.create_task(self._advertise_and_connect_service())
 
         if self._machine_time_task is None:
-            self._machine_time_task = asyncio.create_task(self._update_machine_time_characteristics())
+            self._machine_time_task = asyncio.create_task(self._update_time_service())
 
 
     def stop(self):
@@ -363,7 +366,7 @@ class BLEWrapper:
         if temperature:
             self._data["temperature"] = temperature
         if humidity:
-            self._data["humidity"] = temperature
+            self._data["humidity"] = humidity
         if pm2_5:
             self._data["pm2_5"] = pm2_5
         if co_concentration:

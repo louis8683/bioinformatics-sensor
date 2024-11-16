@@ -1,7 +1,18 @@
-class BLEEventHandler:
-    """
-    Interface for BLE event handlers.
-    """
+from .state import State
+from ble_wrapper import BLECommands
+
+
+class IdleState(State):
+
+    def enter(self):
+        super().enter()
+
+    def exit(self):
+        super().exit()
+
+
+    # *** OVERRIDES FOR THE BLEEventHandler INTERFACE ***
+
 
     def on_connect(self):
         pass

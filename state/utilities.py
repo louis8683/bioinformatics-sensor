@@ -2,7 +2,7 @@ import logging
 
 LOG_LEVEL = logging.DEBUG
 LOG_FORMAT = "[%(name)s] <%(levelname)s> %(message)s"
-NAME = "PMS7003"
+NAME = "STATE"
 
 
 def config_logger(name=NAME, log_level=logging.DEBUG):

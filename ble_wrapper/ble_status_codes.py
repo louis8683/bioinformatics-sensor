@@ -1,0 +1,1 @@
+# TODO: we want to create another characteristics to display the current status of the device

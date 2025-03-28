@@ -129,6 +129,10 @@ class BLEWrapper:
             if len(data) > 0 and data.decode("utf-8") == HANDSHAKE_MSG:
                 response_msg = "howdy".encode("utf-8")
                 get_logger().info("Responding to the handshake...")
+
+                # Add a short delay to ensure the client is ready
+                await asyncio.sleep(0.3)  # 300 ms delay
+
                 await self.response_characteristic.indicate(
                     connection, 
                     data=response_msg, 

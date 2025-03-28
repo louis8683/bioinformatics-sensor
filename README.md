@@ -42,3 +42,6 @@ Here are some relevant state diagrams to illustrate the coordination between eve
 
 ### 10/28/2024: Overhaul
 * Completely overhaul the project to align with the State Machine pattern.
+
+### 3/5/2025: Notes
+* import the micropython stdlib from copying files from https://github.com/micropython/micropython-lib/tree/master/python-stdlib to the pico

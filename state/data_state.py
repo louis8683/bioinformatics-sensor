@@ -27,7 +27,10 @@ class DataState(State):
         try:
             while True:
                 # update the data
-                self.context.send_data()
+                try:
+                    self.context.send_data()
+                except ValueError as e:
+                    get_logger().exception(f"Data not ready: {e}")
 
                 # wait
                 await asyncio.sleep(interval)

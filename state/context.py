@@ -7,12 +7,15 @@ from pms7003 import PMS7003
 from ze07co import ZE07CO
 
 from .state import State
+from .advertise_state import AdvertiseState
+from .data_state import DataState
 from .utilities import get_logger, config_logger
+from ws2812b import WS2812B, RED, ORANGE, GREEN, BLUE, OFF
 
 FILE_NAME = "config.txt"
 DEFAULT_DEVICE_NAME = "bioinfo"
 
-UPDATE_INTERVAL = 1 # seconds
+UPDATE_INTERVAL = 5 # seconds
 
 class Context(BLEEventHandler):
     def __init__(self, initial_state_class, debug=False, debug_sensor=False):
@@ -34,6 +37,10 @@ class Context(BLEEventHandler):
         self.dht20 = DHT20(debug=debug_sensor)
         self.pms7003 = PMS7003(debug=debug_sensor)
         self.ze07co = ZE07CO(debug=debug_sensor)
+
+        # Initialize LEDs
+        self.rgb_led = WS2812B()
+        self.rgb_led.clear_strip()
 
         # Initialize state
         self._state: State = initial_state_class(self)  # Pass self as context
@@ -69,34 +76,18 @@ class Context(BLEEventHandler):
             "pms7003": self.pms7003.get_latest(),
             "ze07co": self.ze07co.get_latest()
         }
-
+    
     
     def send_data(self):
-        """Update the value in the BLE characteristic. Raises ValueError if one of the value is not ready yet."""
-        
-        # TODO: should we include the timestamps for the individual sensor data?
-        
-        dht_data = self.dht20.get_latest()
-        if dht_data["humidity"] == float("-inf"):
-            raise ValueError
-        else:
-            humidity = dht_data["humidity"] 
-        if dht_data["temperature"] == float("-inf"):
-            raise ValueError
-        else:
-            temperature = dht_data["temperature"]
+        """Update the value in the BLE characteristic. Might contain invalid values if data isn't ready."""
 
+        dht_data = self.dht20.get_latest()
+        humidity = dht_data["humidity"] 
+        temperature = dht_data["temperature"]
         pms_data = self.pms7003.get_latest()
-        if pms_data["concentration_atm"]["pm2_5"] == -1:
-            raise ValueError
-        else:
-            pm2_5 = pms_data["concentration_atm"]["pm2_5"]
-        
+        pm2_5 = pms_data["concentration_atm"]["pm2_5"]
         co_data = self.ze07co.get_latest()
-        if co_data["concentration"] == float("-inf"):
-            raise ValueError
-        else:
-            co_concentration = co_data["concentration"]
+        co_concentration = co_data["concentration"]
         
         self.ble_wrapper.update_bioinfo_data(temperature, humidity, pm2_5, co_concentration, keep_old=True)
     
@@ -109,7 +100,6 @@ class Context(BLEEventHandler):
             file.write(content)
         self.device_name = name
         self.ble_wrapper.name = name
-
 
     # *** LIFECYCLE METHODS (USED BY THE MAIN FUNCTION) ***
 
@@ -127,6 +117,7 @@ class Context(BLEEventHandler):
             await self.ze07co.start()
 
             # Start first state
+            self.rgb_led.disconnected()
             self._state.enter()
             self.ble_wrapper.set_event_handler(self._state)
 
@@ -145,10 +136,16 @@ class Context(BLEEventHandler):
                 self._state_running.clear()
                 self._state.exit()
                 self.ble_wrapper.unregister_event_handler()
+                self.rgb_led.clear_strip()
+
                 self._state = self._next_state(self)
                 self._state.enter()
                 self.ble_wrapper.set_event_handler(self._state)
                 self._state_running.set()
+                if isinstance(self._state, DataState):
+                    self.rgb_led.connected()
+                elif isinstance(self._state, AdvertiseState):
+                    self.rgb_led.disconnected()
 
         except Exception:
             # free up resources on unknown error
@@ -174,5 +171,3 @@ class Context(BLEEventHandler):
         await self.pms7003.destroy()
         await self.dht20.destroy()
 
-
-    

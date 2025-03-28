@@ -1,10 +1,17 @@
 import asyncio
 
 from ble_wrapper import BLEWrapper, BLECommands
-from state import Context
+from state import Context, AdvertiseState
 
+from time import sleep
+from machine import Pin
+
+led = Pin('LED', Pin.OUT)
 
 async def main():
+
+    # Toggle the LED on
+    led.value(1)
 
     # Instantiate a BLE wrapper
     print("Initialize the BLE...")
@@ -12,7 +19,7 @@ async def main():
 
     # Instantiate the device context
     print("Initialize the context...")
-    context = Context(ble_wrapper)
+    context = Context(AdvertiseState)
 
     # Start the application lifecycle
     print("Device starting...")

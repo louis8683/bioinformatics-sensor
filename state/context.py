@@ -10,7 +10,7 @@ from .state import State
 from .advertise_state import AdvertiseState
 from .data_state import DataState
 from .utilities import get_logger, config_logger
-from ws2812b import WS2812B, RED, ORANGE, GREEN, BLUE, OFF
+from ws2812b import WS2812B
 
 FILE_NAME = "config.txt"
 DEFAULT_DEVICE_NAME = "bioinfo"
@@ -79,7 +79,14 @@ class Context(BLEEventHandler):
     
     
     def send_data(self):
-        """Update the value in the BLE characteristic. Might contain invalid values if data isn't ready."""
+        """Update the value in the BLE characteristic. Might contain invalid values if data isn't ready.
+        
+        Invalid values:
+        - PM2.5: -1
+        - CO: float("-inf")
+        - Temperature: float("-inf")
+        - Humidity: float("-inf")
+        """
 
         dht_data = self.dht20.get_latest()
         humidity = dht_data["humidity"] 

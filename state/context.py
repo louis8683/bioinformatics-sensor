@@ -109,8 +109,6 @@ class Context(BLEEventHandler):
         pm2_5 = pms_data["concentration_atm"]["pm2_5"]
         co_data = self.ze07co.get_latest()
         co_concentration = co_data["concentration"]
-
-        get_logger().info(f"PM2.5: {pm2_5}")
         
         self.ble_wrapper.update_bioinfo_data(temperature, humidity, pm2_5, co_concentration, keep_old=True)
     

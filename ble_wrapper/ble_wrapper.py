@@ -440,8 +440,6 @@ class BLEWrapper:
 
         self._data["last_update"] = time.ticks_ms() // 1000
 
-        get_logger().info(f'PM2.5 in wrapper: {self._data["pm2_5"]}')
-
         # write to the GATTS characteristics
         packed_data = struct.pack(
             '<ffffi',

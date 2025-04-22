@@ -15,6 +15,9 @@ REQUEST_CHARACTERISTICS_UUID = bluetooth.UUID("4f2d7b8e-23b9-4bc7-905f-a8e3d7841
 RESPONSE_CHARACTERISTICS_UUID = bluetooth.UUID("93e89c7d-65e3-41e6-b59f-1f3a6478de45")
 # machine-time-characteristics UUID
 MACHINE_TIME_CHARACTERISTICS_UUID = bluetooth.UUID("4fd3a9d8-5e82-4c1e-a2d3-9bc23f3a8341")
+# machine-time-characteristics UUID
+BATTERY_CHARACTERISTICS_UUID = bluetooth.UUID("3fcd2786-f1b1-4b64-b6d3-7ecb36d4f4a5")
+
 
 # expected handshake message from client
 HANDSHAKE_MSG = "hello"

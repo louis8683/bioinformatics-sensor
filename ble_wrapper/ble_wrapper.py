@@ -4,13 +4,15 @@ import struct
 import time
 
 from .ble_event_handler import BLEEventHandler
-from .constants import ENV_SENSE_UUID, BIO_INFO_CHARACTERISTICS_UUID, REQUEST_CHARACTERISTICS_UUID, RESPONSE_CHARACTERISTICS_UUID, MACHINE_TIME_CHARACTERISTICS_UUID
+from .constants import ENV_SENSE_UUID, BIO_INFO_CHARACTERISTICS_UUID, REQUEST_CHARACTERISTICS_UUID, RESPONSE_CHARACTERISTICS_UUID, MACHINE_TIME_CHARACTERISTICS_UUID, BATTERY_CHARACTERISTICS_UUID
 from .constants import HANDSHAKE_MSG, HANDSHAKE_TIMEOUT_MS
 from .constants import ADV_APPEARANCE_GENERIC_THERMOMETER, ADV_INTERVAL_MS
 from .constants import RESPONSE_TIMEOUT_MS, BAD_RESPONSE, OK_RESPONSE
 
 from .utilities import get_logger
 from . import utilities
+
+from machine import ADC, Pin
 
 
 class BLEWrapper:
@@ -56,6 +58,7 @@ class BLEWrapper:
         # Tasks
         self._peripheral_task = None
         self._machine_time_task = None
+        self._battery_task = None
         self._request_task = None
 
         # Initialize BLE
@@ -79,8 +82,10 @@ class BLEWrapper:
         - Machine time
         - Request
         - Response
+        - Battery
         """
         self.bioinfo_service = aioble.Service(ENV_SENSE_UUID)
+
         self.bioinfo_characteristic = aioble.Characteristic(
             service=self.bioinfo_service,
             uuid=BIO_INFO_CHARACTERISTICS_UUID,
@@ -96,7 +101,7 @@ class BLEWrapper:
         self.machine_time_characteristics = aioble.Characteristic(
             service=self.bioinfo_service,
             uuid=MACHINE_TIME_CHARACTERISTICS_UUID,
-            read=True,
+            read=True
         )
         
         self.request_characteristic = aioble.Characteristic(
@@ -108,7 +113,13 @@ class BLEWrapper:
         self.response_characteristic = aioble.Characteristic(
             service=self.bioinfo_service,
             uuid=RESPONSE_CHARACTERISTICS_UUID,
-            indicate=True,
+            indicate=True
+        )
+
+        self.battery_characteristic = aioble.Characteristic(
+            service=self.bioinfo_service,
+            uuid=BATTERY_CHARACTERISTICS_UUID,
+            read=True
         )
 
         aioble.register_services(self.bioinfo_service)
@@ -236,6 +247,53 @@ class BLEWrapper:
         except asyncio.CancelledError:
             pass
     
+    async def _update_battery_service(self):
+        """
+        Update the battery-characteristics every 20 second
+        """
+
+        # Initialize ADC on GPIO 28 (ADC2)
+        adc = ADC(Pin(28))
+        # Reference voltage for the ADC (3.3V on the Pico)
+        VREF = 3.3
+        # Voltage divider correction factor (1.51 based on your resistor values)
+        VOLTAGE_DIVIDER_RATIO = 1.51
+        INTERVAL_SEC = 20
+
+        try:
+            while True:
+                # Read the raw ADC value (0-65535)
+                raw_value = adc.read_u16()
+                # Convert raw value to voltage
+                adc_voltage = raw_value * VREF / 65535
+                # Calculate actual battery voltage using the voltage divider ratio
+                battery_voltage = adc_voltage * VOLTAGE_DIVIDER_RATIO
+                battery_percentage = self._voltage_to_percent(battery_voltage)
+                battery_data = utilities.encode_int(battery_percentage)
+                self.machine_time_characteristics.write(battery_data)
+
+                get_logger().info(f"Battery level: {battery_voltage}V")
+                get_logger().info(f"Battery percentage: {battery_percentage}%")
+
+                # sleep for the duration
+                await asyncio.sleep(INTERVAL_SEC)
+
+                # check for destroy signal
+                if self._destroy_signal.is_set():
+                    break
+        except asyncio.CancelledError:
+            pass
+
+    
+    def _voltage_to_percent(self, voltage) -> int:
+        if voltage >= 4.2:
+            return 100
+        elif voltage <= 3.0:
+            return 0
+        else:
+            return int(((voltage - 3.0) / (4.2 - 3.0)) * 100)
+
+    
 
     async def _request_service(self):
         """
@@ -327,6 +385,9 @@ class BLEWrapper:
         if self._machine_time_task is None:
             self._machine_time_task = asyncio.create_task(self._update_time_service())
 
+        if self._battery_task is None:
+            self._battery_task = asyncio.create_task(self._update_battery_service())
+
 
     def stop(self):
         """Stop the BLE module."""
@@ -368,16 +429,18 @@ class BLEWrapper:
                 self._data[key] = float("-inf")
             
         # update the data
-        if temperature:
+        if temperature != None:
             self._data["temperature"] = temperature
-        if humidity:
+        if humidity != None:
             self._data["humidity"] = humidity
-        if pm2_5:
+        if pm2_5 != None:
             self._data["pm2_5"] = pm2_5
-        if co_concentration:
+        if co_concentration != None:
             self._data["co_concentration"] = co_concentration
 
         self._data["last_update"] = time.ticks_ms() // 1000
+
+        get_logger().info(f'PM2.5 in wrapper: {self._data["pm2_5"]}')
 
         # write to the GATTS characteristics
         packed_data = struct.pack(

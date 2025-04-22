@@ -14,7 +14,7 @@ OFF = (0, 0, 0)
 
 class WS2812B:
 
-    def __init__(self, pin=11, num_leds=8, brightness=0, debug=False):
+    def __init__(self, pin=11, num_leds=8, brightness=1.0, debug=False):
         self.pin = pin
         self.num_leds = num_leds
         self.brightness = brightness

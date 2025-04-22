@@ -1,1 +1,3 @@
-device_name = bioinfo
+device_name = bioinfo-tortoise
+debug = true
+debug_sensor = true

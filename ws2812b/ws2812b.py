@@ -1,6 +1,10 @@
 import machine
 import neopixel
 import uasyncio as asyncio
+import logging
+
+from .utilities import get_logger, config_logger
+
 
 RED = (255, 0, 0)
 ORANGE = (255, 165, 0)
@@ -10,13 +14,19 @@ OFF = (0, 0, 0)
 
 class WS2812B:
 
-    def __init__(self, pin=11, num_leds=8, brightness=0.02):
+    def __init__(self, pin=11, num_leds=8, brightness=0, debug=False):
         self.pin = pin
         self.num_leds = num_leds
         self.brightness = brightness
         self.np = neopixel.NeoPixel(machine.Pin(self.pin), self.num_leds)
         self.blinking_task = None
         self.running = False
+
+        # Config the logger
+        if debug:
+            config_logger(log_level=logging.DEBUG)
+        else:
+            config_logger(log_level=logging.ERROR)
 
     def clear_strip(self):
         """Turn off all LEDs."""
@@ -36,10 +46,10 @@ class WS2812B:
     def start_blinking(self, color, interval=0.5):
         """Start a non-blocking blinking effect with the specified color."""
         if self.blinking_task:
-            print("Stopping previous blinking task.")
+            get_logger().debug("Stopping previous blinking task.")
             self.stop_blinking()
 
-        print(f"Starting blinking: {color}")
+        get_logger().debug(f"Starting blinking: {color}")
         self.running = True
         self.blinking_task = asyncio.create_task(self._blink_loop(color, interval))
 
@@ -61,64 +71,64 @@ class WS2812B:
 
     # Explicit Methods for Use Cases
     def low_battery(self):
-        print("Displaying Low Battery (Red)")
+        get_logger().info("Displaying Low Battery (Red)")
         self.set_color(RED)
 
     def medium_battery(self):
-        print("Displaying Medium Battery (Orange)")
+        get_logger().info("Displaying Medium Battery (Orange)")
         self.set_color(ORANGE)
 
     def full_battery(self):
-        print("Displaying Full Battery (Green)")
+        get_logger().info("Displaying Full Battery (Green)")
         self.set_color(GREEN)
 
     def connected(self):
-        print("Displaying Connected (Solid Blue)")
+        get_logger().info("Displaying Connected (Solid Blue)")
         self.stop_blinking()
         self.set_color(BLUE)
 
     def disconnected(self):
-        print("Displaying Disconnected (Flashing Blue)")
+        get_logger().info("Displaying Disconnected (Flashing Blue)")
         self.start_blinking(BLUE)
 
 
 async def main():
-    print("Initializing LED strip...")
+    get_logger().info("Initializing LED strip...")
     led_strip = WS2812B(pin=11, num_leds=8, brightness=0.02)
 
     try:
         # Test Low Battery (Red)
-        print("Testing Low Battery State (Red)")
+        get_logger().debug("Testing Low Battery State (Red)")
         led_strip.low_battery()
         await asyncio.sleep(2)
 
         # Test Medium Battery (Orange)
-        print("Testing Medium Battery State (Orange)")
+        get_logger().debug("Testing Medium Battery State (Orange)")
         led_strip.medium_battery()
         await asyncio.sleep(2)
 
         # Test Full Battery (Green)
-        print("Testing Full Battery State (Green)")
+        get_logger().debug("Testing Full Battery State (Green)")
         led_strip.full_battery()
         await asyncio.sleep(2)
 
         # Test Connected State (Solid Blue)
-        print("Testing Connected State (Solid Blue)")
+        get_logger().debug("Testing Connected State (Solid Blue)")
         led_strip.connected()
         await asyncio.sleep(2)
 
         # Test Disconnected State (Flashing Blue)
-        print("Testing Disconnected State (Flashing Blue)")
+        get_logger().debug("Testing Disconnected State (Flashing Blue)")
         led_strip.disconnected()
         await asyncio.sleep(5)
 
         # Stop Blinking and Clear
-        print("Stopping Blink and Clearing LEDs")
+        get_logger().debug("Stopping Blink and Clearing LEDs")
         led_strip.stop_blinking()
         led_strip.clear_strip()
 
     except KeyboardInterrupt:
-        print("Interrupted. Stopping and Clearing LEDs.")
+        get_logger().debug("Interrupted. Stopping and Clearing LEDs.")
         led_strip.stop_blinking()
         led_strip.clear_strip()
 

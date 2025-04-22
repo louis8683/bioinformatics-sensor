@@ -8,15 +8,28 @@ from .utilities import get_logger
 
 class DataState(State):
 
+    def __init__(self, context, dht20, pms7003, ze07co):
+        super().__init__(context)
+        self.dht20 = dht20
+        self.pms7003 = pms7003
+        self.ze07co = ze07co
+
     def enter(self):
         super().enter()
+        self.dht20.resume()
+        self.pms7003.resume()
+        self.ze07co.resume()
 
         # TODO: start the data update coroutine
         self.start_task(self._data_service(self.context.update_interval))
+    
 
 
     def exit(self):
         super().exit()
+        self.dht20.pause()
+        self.pms7003.pause()
+        self.ze07co.pause()
 
     
     # *** COROUTINES ***

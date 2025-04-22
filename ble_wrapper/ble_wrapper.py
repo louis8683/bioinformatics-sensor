@@ -165,7 +165,7 @@ class BLEWrapper:
         get_logger().info("Starting advertisment/connection loop...")
         try:
             while not self._destroy_signal.is_set():
-                print(f"Advertising as {self.name}")
+                get_logger().info(f"Advertising as {self.name}")
                 async with await aioble.advertise(
                     ADV_INTERVAL_MS,
                     name=self.name,
@@ -297,6 +297,7 @@ class BLEWrapper:
         
         :param event_handler: An instance implementing the BLEEventHandler interface.
         """
+        get_logger().debug("Event handler set")
         self._event_handler = event_handler
 
 

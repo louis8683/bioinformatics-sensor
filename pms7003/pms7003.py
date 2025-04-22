@@ -56,6 +56,8 @@ class PMS7003:
 
         # Events
         self._destroy_signal = asyncio.Event()
+        self._pause_signal = asyncio.Event()
+        self._resume_signal = asyncio.Event()
 
         # Coroutine tasks
         self._data_update_task = None
@@ -113,6 +115,19 @@ class PMS7003:
         return True
 
 
+    def pause(self):
+        """Pause data collection."""
+        get_logger().info("Pausing data collection...")
+        self._pause_signal.set()
+
+
+    def resume(self):
+        """Resume data collection."""
+        get_logger().info("Resuming data collection...")
+        self._pause_signal.clear()
+        self._resume_signal.set()
+
+
     async def destroy(self):
         """
         Destroy this class instance and freeing up resources.
@@ -167,13 +182,33 @@ class PMS7003:
         
         try:
             while not self._destroy_signal.is_set():
+
+                if self._pause_signal.is_set():
+                    get_logger().info("Data collection paused. Waiting to resume...")
+                    await self._resume_signal.wait()
+                    self._resume_signal.clear()
+
                 get_logger().info(f"starting a data cycle at timestamp {time.ticks_ms()}...")
 
-                while self.uart.any() < 32:
+                nRetries = 5
+                while self.uart.any() < 32 and nRetries > 0:
                     await asyncio.sleep(0.3)
+                    nRetries -= 1
+                    get_logger().debug(f"Retrying... Remaining retries: {nRetries}")
+                    if nRetries == 0:
+                        if self.uart.any() > 0:
+                            self.uart.read()  # Clear buffer
+                        await self._init_sensor() # reset the sensor
+                        self._data = self._invalid_data()
+                        get_logger().debug(f"Resetting...")
 
                 # Read data
                 raw_data = self.uart.read()
+
+                if raw_data is None: # timeout
+                    await asyncio.sleep(1)
+                    continue # skip this data
+
                 get_logger().info(f"Received {len(raw_data)} bytes from sensor")
                 if len(raw_data) < 32:
                     get_logger().warning(f"too short")
@@ -187,10 +222,16 @@ class PMS7003:
                     continue
 
                 # Parse data
-                self._data = self._parse_data(raw_data)
-                self._data["timestamp"] = time.ticks_ms()
-                get_logger().info(f"Parsed result: {self._data}")
-
+                try:
+                    self._data = self._parse_data(raw_data)
+                    self._data["timestamp"] = time.ticks_ms()
+                    get_logger().info(f"Parsed result: {self._data}")
+                except ValueError as e:
+                    get_logger().error(f"Invalid data, clearing buffer")
+                    self._data = self._parse_data(raw_data)
+                    if self.uart.any() > 0:
+                        self.uart.read()  # Clear buffer
+                    await self._init_sensor() # reset the sensor\
 
             get_logger().info("data update service stopped via destroy signal")
         except asyncio.CancelledError:
@@ -223,6 +264,30 @@ class PMS7003:
                 "2_5um": (data[22] << 8) | data[23],
                 "5um": (data[24] << 8) | data[25],
                 "10um": (data[26] << 8) | data[27],
+            },
+            "timestamp": time.ticks_ms()
+        }
+
+    
+    def _invalid_data(self):
+        return {
+            "concentration_cf1": {
+                "pm1": -1,
+                "pm2_5": -1,
+                "pm10": -1
+            },
+            "concentration_atm": {
+                "pm1": -1,
+                "pm2_5": -1,
+                "pm10": -1
+            },
+            "n_particles": {
+                "0_3um": -1,
+                "0_5um": -1,
+                "1um": -1,
+                "2_5um": -1,
+                "5um": -1,
+                "10um": -1,
             },
             "timestamp": time.ticks_ms()
         }

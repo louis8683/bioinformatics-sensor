@@ -40,6 +40,8 @@ class ZE07CO:
 
         # Events
         self._destroy_signal = asyncio.Event()
+        self._pause_signal = asyncio.Event()
+        self._resume_signal = asyncio.Event()
 
         # Coroutine tasks
         self._data_update_task = None
@@ -79,6 +81,19 @@ class ZE07CO:
         self._data_update_task = asyncio.create_task(self._data_update_service())
         
         return True
+
+
+    def pause(self):
+        """Pause data collection."""
+        get_logger().info("Pausing data collection...")
+        self._pause_signal.set()
+
+
+    def resume(self):
+        """Resume data collection."""
+        get_logger().info("Resuming data collection...")
+        self._pause_signal.clear()
+        self._resume_signal.set()
 
 
     async def destroy(self):
@@ -132,13 +147,33 @@ class ZE07CO:
         
         try:
             while not self._destroy_signal.is_set():
+
+                if self._pause_signal.is_set():
+                    get_logger().info("Data collection paused. Waiting to resume...")
+                    await self._resume_signal.wait()
+                    self._resume_signal.clear()
+
                 get_logger().info(f"starting a data cycle at timestamp {time.ticks_ms()}...")
 
-                while self.uart.any() < 9:
+                nRetries = 5
+                while self.uart.any() < 9 and nRetries > 0:
                     await asyncio.sleep(0.3)
+                    nRetries -= 1
+                    get_logger().debug(f"Retrying... Remaining retries: {nRetries}")
+                    if nRetries == 0:
+                        if self.uart.any() > 0:
+                            self.uart.read()  # Clear buffer
+                        await self._init_sensor() # reset the sensor
+                        self._data["concentration"] = float("-inf")
+                        get_logger().debug(f"Resetting...")
 
                 # Read data
                 raw_data = self.uart.read()
+
+                if raw_data is None: # timeout
+                    await asyncio.sleep(1)
+                    continue # skip this data
+                
                 get_logger().info(f"Received {len(raw_data)} bytes from sensor")
                 if len(raw_data) < 9:
                     get_logger().warning(f"too short")

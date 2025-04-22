@@ -19,9 +19,13 @@ UPDATE_INTERVAL = 5 # seconds
 
 class Context(BLEEventHandler):
     def __init__(self, initial_state_class, debug=False, debug_sensor=False):
+
+        self.debug = debug
+        self.debug_sensor = debug_sensor
+        
         # Read from the config file
         self.device_name = DEFAULT_DEVICE_NAME
-        with open("config.txt", "r") as file:
+        with open(FILE_NAME, "r") as file:
             while True:
                 line = file.readline()
                 if not line:
@@ -29,14 +33,24 @@ class Context(BLEEventHandler):
                 name, _, value = line.strip().split(" ")
                 if name == "device_name":
                     self.device_name = value
+                if name == "debug":
+                    self.debug = (value == "true" or value == "True")
+                if name == "debug_sensor":
+                    self.debug_sensor = (value == "true" or value == "True")
+
+        
+        get_logger().info(f"Logging: debug={self.debug}, debug_sensor={self.debug_sensor}")
+        
+
+        get_logger().info(f"Device name: {self.device_name}")
 
         # Initialize BLE
         self.ble_wrapper = BLEWrapper(name=self.device_name)
 
         # Initialize sensors
-        self.dht20 = DHT20(debug=debug_sensor)
-        self.pms7003 = PMS7003(debug=debug_sensor)
-        self.ze07co = ZE07CO(debug=debug_sensor)
+        self.dht20 = DHT20(debug=self.debug_sensor)
+        self.pms7003 = PMS7003(debug=self.debug_sensor)
+        self.ze07co = ZE07CO(debug=self.debug_sensor)
 
         # Initialize LEDs
         self.rgb_led = WS2812B()
@@ -53,10 +67,10 @@ class Context(BLEEventHandler):
         self._state_running = asyncio.Event()
 
         # Config the logger
-        if debug:
+        if self.debug:
             config_logger(log_level=logging.DEBUG)
         else:
-            config_logger(log_level=logging.ERROR)
+            config_logger(log_level=logging.INFO)
 
         # Other Attributes
         self.update_interval = UPDATE_INTERVAL
@@ -120,8 +134,11 @@ class Context(BLEEventHandler):
 
             # Start sensors
             await self.dht20.start()
+            self.dht20.pause()
             await self.pms7003.start()
+            self.pms7003.pause()
             await self.ze07co.start()
+            self.ze07co.pause()
 
             # Start first state
             self.rgb_led.disconnected()
@@ -145,7 +162,11 @@ class Context(BLEEventHandler):
                 self.ble_wrapper.unregister_event_handler()
                 self.rgb_led.clear_strip()
 
-                self._state = self._next_state(self)
+                if self._next_state == DataState:
+                    self._state = DataState(self, self.dht20, self.pms7003, self.ze07co)
+                else:
+                    self._state = self._next_state(self)
+                
                 self._state.enter()
                 self.ble_wrapper.set_event_handler(self._state)
                 self._state_running.set()
@@ -154,10 +175,11 @@ class Context(BLEEventHandler):
                 elif isinstance(self._state, AdvertiseState):
                     self.rgb_led.disconnected()
 
-        except Exception:
+        except Exception as e:
             # free up resources on unknown error
             await self.destroy()
-            raise Exception
+            get_logger().error(f"Unknown error: {e}")
+            raise e
     
 
     async def stop(self):

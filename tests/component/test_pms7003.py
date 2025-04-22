@@ -1,6 +1,10 @@
 import asyncio
 
 from pms7003 import PMS7003
+from machine import Pin
+
+EN_PIN = Pin(2, Pin.OUT) 
+EN_PIN.high()
 
 async def test_pms7003():
     pms7003 = PMS7003(debug=True)

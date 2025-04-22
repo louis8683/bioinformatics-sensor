@@ -39,6 +39,8 @@ class DHT20:
 
         # Events
         self._destroy_signal = asyncio.Event()
+        self._pause_signal = asyncio.Event()
+        self._resume_signal = asyncio.Event()
 
         # Coroutine tasks
         self._data_update_task = None
@@ -92,8 +94,21 @@ class DHT20:
 
         get_logger().info("start success")
         return True
+    
 
+    def pause(self):
+        """Pause data collection."""
+        get_logger().info("Pausing data collection...")
+        self._pause_signal.set()
 
+    
+    def resume(self):
+        """Resume data collection."""
+        get_logger().info("Resuming data collection...")
+        self._pause_signal.clear()
+        self._resume_signal.set()
+
+    
     async def destroy(self):
         """
         Destroy the DHT20 instance and freeing up resources.
@@ -172,6 +187,9 @@ class DHT20:
         Returns:
             bool: True if successful, False if failed.
         """
+
+        get_logger().debug("triggered measuremnet")
+
         # wait 10ms
         await asyncio.sleep(0.01)
 
@@ -240,6 +258,12 @@ class DHT20:
 
         try:
             while not self._destroy_signal.is_set():
+
+                if self._pause_signal.is_set():
+                    get_logger().info("Data collection paused. Waiting to resume...")
+                    await self._resume_signal.wait()
+                    self._resume_signal.clear()
+
                 get_logger().info(f"starting a data cycle at timestamp {time.ticks_ms()}...")
                 # wait for the next interval's start time
                 wait_time = self.interval - (time.ticks_ms() - self._data["timestamp"]) / 1000
@@ -249,38 +273,46 @@ class DHT20:
 
                 # STEP 2: trigger measurement
 
-                get_logger().info("Triggering measurement...")
-                if not await self._trigger_measurement():
-                    # TODO: set the sensor into a warning status signalling that there is problem retrieving data
-                    continue
-
-                # STEP 3: read data
-
-                get_logger().info("Reading data from sensor...")
                 try:
-                    data = await asyncio.wait_for(self._get_raw_data(), DATA_TIMEOUT)
-                except OSError:
-                    # TODO: set sensor to warning
-                    get_logger().error("OSError, retry")
-                    continue
-                except asyncio.TimeoutError:
-                    # TODO: set sensor to warning status
-                    continue
 
-                # STEP 5: parse data
+                    get_logger().info("Triggering measurement...")
+                    if not await self._trigger_measurement():
+                        # TODO: set the sensor into a warning status signalling that there is problem retrieving data
+                        continue
 
-                # calculate the temperature and humidity value
+                    # STEP 3: read data
 
-                get_logger().info("Parsing data...")
-                if data is not None:
-                    humidity, temperature = self._parse_data(data)
-                    self._data["humidity"] = humidity
-                    self._data["temperature"] = temperature
+                    get_logger().info("Reading data from sensor...")
+                    try:
+                        data = await asyncio.wait_for(self._get_raw_data(), DATA_TIMEOUT)
+                    except OSError:
+                        # TODO: set sensor to warning
+                        get_logger().error("OSError, retry")
+                        continue
+                    except asyncio.TimeoutError:
+                        # TODO: set sensor to warning status
+                        continue
+
+                    # STEP 5: parse data
+
+                    # calculate the temperature and humidity value
+
+                    get_logger().info("Parsing data...")
+                    if data is not None:
+                        humidity, temperature = self._parse_data(data)
+                        self._data["humidity"] = humidity
+                        self._data["temperature"] = temperature
+                        self._data["timestamp"] = time.ticks_ms()
+
+                        get_logger().info(f"Humidity = {humidity}")
+                        get_logger().info(f"Temperature = {temperature}")
+                except Exception as e:
+                    get_logger().error(f"Error during DHT20 operation: {e}")
+                    self._data["humidity"] = float("-inf")
+                    self._data["temperature"] = float("-inf")
                     self._data["timestamp"] = time.ticks_ms()
-
-                    get_logger().info(f"Humidity = {humidity}")
-                    get_logger().info(f"Temperature = {temperature}")
-
+                    await asyncio.sleep(1)
+                    get_logger().error(f"Retrying DHT20")
             get_logger().info("data update service stopped via destroy signal")
         except asyncio.CancelledError:
             get_logger().info("data update service cancelled")

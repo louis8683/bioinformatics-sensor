@@ -190,7 +190,7 @@ class PMS7003:
 
                 get_logger().info(f"starting a data cycle at timestamp {time.ticks_ms()}...")
 
-                nRetries = 10
+                nRetries = 5
                 while self.uart.any() < 32 and nRetries > 0:
                     await asyncio.sleep(0.3)
                     nRetries -= 1

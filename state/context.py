@@ -53,7 +53,7 @@ class Context(BLEEventHandler):
         self.ze07co = ZE07CO(debug=self.debug_sensor)
 
         # Initialize LEDs
-        self.rgb_led = WS2812B(brightness=0.1)
+        self.rgb_led = WS2812B()
         self.rgb_led.clear_strip()
 
         # Initialize state

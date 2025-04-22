@@ -1,3 +1,3 @@
-device_name = bioinfo-squirrel
-debug = false
-debug_sensor = false
+device_name = bioinfo-deer
+debug = true
+debug_sensor = true
